@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Data Processor</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- SheetJS Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.1/xlsx.full.min.js"></script>
+    <style>
+        body {
+            padding: 20px;
+        }
+        table {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Excel Data Processor</h2>
+    <p>Upload your workbook to read the sheet "Day wise GB production", exclude the "Total" column, dynamically calculate sums, and add columns for the sum of all "Nov'24 W1", "Nov'24 W2", "Nov'24 W3", "Nov'24 W4" columns, and W1 Rev (set to 0).</p>
+
+    <!-- File Upload -->
+    <input type="file" id="file-input" class="form-control mb-3">
+    <button class="btn btn-primary" onclick="processWorkbook()">Upload and Calculate</button>
+
+    <!-- Table to Display Data -->
+    <table id="output-table" class="table table-bordered mt-4" style="display:none;">
+        <thead>
+            <tr>
+                <th>GB</th>
+                <th>Sum</th>
+                <th>Nov'24 W1 Sum</th>
+                <th>Nov'24 W2 Sum</th>
+                <th>Nov'24 W3 Sum</th>
+                <th>Nov'24 W4 Sum</th>
+                <th>W1 Rev</th>
+            </tr>
+        </thead>
+        <tbody id="output-body"></tbody>
+    </table>
+
+    <!-- Download Button -->
+    <button class="btn btn-success mt-3" id="download-button" style="display:none;" onclick="downloadResults()">Download Results</button>
+</div>
+
+<script>
+    let processedData = [];
+
+    function processWorkbook() {
+        const fileInput = document.getElementById('file-input');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert("Please upload an Excel file.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const data = e.target.result;
+
+            // Parse the workbook
+            const workbook = XLSX.read(data, { type: 'binary' });
+
+            // Check for the existence of the required sheet
+            const sheetName = "Day wise GB production";
+            if (!workbook.SheetNames.includes(sheetName)) {
+                alert(`Sheet "${sheetName}" not found in the uploaded workbook.`);
+                return;
+            }
+
+            // Extract data from the sheet
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            // Process the data and calculate sums
+            displayData(jsonData);
+        };
+
+        reader.readAsBinaryString(file);
+    }
+
+    function displayData(data) {
+        const outputBody = document.getElementById('output-body');
+        outputBody.innerHTML = ""; // Clear any previous data
+        processedData = []; // Clear any previous processed data
+
+        // Extract header row to locate columns
+        const headerRow = data[0];
+        const gbIndex = headerRow.indexOf("GB");
+        const totalIndex = headerRow.indexOf("Total");
+        const w1Indexes = headerRow.reduce((indexes, col, i) => {
+            if (col === "Nov'24 W1") indexes.push(i);
+            return indexes;
+        }, []);
+        const w2Indexes = headerRow.reduce((indexes, col, i) => {
+            if (col === "Nov'24 W2") indexes.push(i);
+            return indexes;
+        }, []);
+        const w3Indexes = headerRow.reduce((indexes, col, i) => {
+            if (col === "Nov'24 W3") indexes.push(i);
+            return indexes;
+        }, []);
+        const w4Indexes = headerRow.reduce((indexes, col, i) => {
+            if (col === "Nov'24 W4") indexes.push(i);
+            return indexes;
+        }, []);
+
+        if (gbIndex === -1) {
+            alert("The 'GB' column was not found in the uploaded sheet.");
+            return;
+        }
+
+        // Iterate through each row of data
+        data.forEach((row, rowIndex) => {
+            if (rowIndex === 0) return; // Skip header row
+
+            const gbValue = row[gbIndex] || 0; // Get GB value
+
+            // Filter out GB and Total columns
+            const rowValues = row.filter((_, index) => index !== gbIndex && index !== totalIndex);
+
+            // Calculate sum dynamically (ignoring "Total" column)
+            const rowSum = rowValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
+
+            // Calculate the sum of all "Nov'24 W1", "Nov'24 W2", "Nov'24 W3", and "Nov'24 W4" columns for this row
+            const w1Sum = w1Indexes.reduce((sum, colIndex) => sum + (Number(row[colIndex]) || 0), 0);
+            const w2Sum = w2Indexes.reduce((sum, colIndex) => sum + (Number(row[colIndex]) || 0), 0);
+            const w3Sum = w3Indexes.reduce((sum, colIndex) => sum + (Number(row[colIndex]) || 0), 0);
+            const w4Sum = w4Indexes.reduce((sum, colIndex) => sum + (Number(row[colIndex]) || 0), 0);
+
+            // Set W1 Rev to 0
+            const w1Rev = 0;
+
+            // Create a new table row
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${gbValue}</td>
+                <td>${rowSum}</td>
+                <td>${w1Sum}</td>
+                <td>${w2Sum}</td>
+                <td>${w3Sum}</td>
+                <td>${w4Sum}</td>
+                <td>${w1Rev}</td>
+            `;
+            outputBody.appendChild(tr);
+
+            // Store processed data for download
+            processedData.push({
+                GB: gbValue,
+                Sum: rowSum,
+                "Nov'24 W1 Sum": w1Sum,
+                "Nov'24 W2 Sum": w2Sum,
+                "Nov'24 W3 Sum": w3Sum,
+                "Nov'24 W4 Sum": w4Sum,
+                "W1 Rev": w1Rev
+            });
+        });
+
+        // Show the table and download button
+        document.getElementById('output-table').style.display = "table";
+        document.getElementById('download-button').style.display = "inline-block";
+    }
+
+    function downloadResults() {
+        if (processedData.length === 0) {
+            alert("No data available to download.");
+            return;
+        }
+
+        const ws = XLSX.utils.json_to_sheet(processedData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Results");
+
+        XLSX.writeFile(wb, "ProcessedResults.xlsx");
+    }
+</script>
+
+</body>
+</html>
